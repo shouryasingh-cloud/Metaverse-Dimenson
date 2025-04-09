@@ -1,0 +1,169 @@
+import { useState, useEffect } from "react";
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  onSnapshot,
+} from "firebase/firestore";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBcdHKngKhyLkheu4Am5-cR7Ny_3WL9mu0",
+  authDomain: "metaverse-dimension.firebaseapp.com",
+  projectId: "metaverse-dimension",
+  storageBucket: "metaverse-dimension.firebasestorage.app",
+  messagingSenderId: "1022068904165",
+  appId: "1:1022068904165:web:264e9a4b8a1e8bc4a9c40c",
+  measurementId: "G-Q9HKG94PQX"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+const auth = getAuth(app);
+
+export default function MetaverseSite() {
+  const [theme, setTheme] = useState("dark");
+  const [articles, setArticles] = useState([]);
+  const [pdfs, setPdfs] = useState([]);
+  const [newArticle, setNewArticle] = useState("");
+  const [tabActive, setTabActive] = useState(true);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    const unsub = onSnapshot(collection(db, "articles"), (snapshot) => {
+      setArticles(snapshot.docs.map((doc) => doc.data().content));
+    });
+
+    const fetchPDFs = async () => {
+      const querySnapshot = await getDocs(collection(db, "pdfs"));
+      setPdfs(querySnapshot.docs.map((doc) => doc.data()));
+    };
+    fetchPDFs();
+
+    return () => unsub();
+  }, []);
+
+  const handleUploadPdf = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const storageRef = ref(storage, `pdfs/${file.name}`);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    await addDoc(collection(db, "pdfs"), { name: file.name, url });
+  };
+
+  const handlePostArticle = async () => {
+    if (newArticle.trim()) {
+      await addDoc(collection(db, "articles"), { content: newArticle });
+      setNewArticle("");
+    }
+  };
+
+  const handleLogin = () => {
+    const email = prompt("Email:");
+    const password = prompt("Password:");
+    if (email && password) {
+      signInWithEmailAndPassword(auth, email, password).catch(alert);
+    }
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
+
+  return (
+    <div className={`min-h-screen p-4 ${theme === "dark" ? "bg-black text-white" : "bg-white text-black"}`}>
+      <h1 className="text-3xl font-bold mb-4 text-center">🪐 Metaverse Knowledge Portal</h1>
+
+      {!user ? (
+        <div className="text-center">
+          <Button onClick={handleLogin}>Login</Button>
+        </div>
+      ) : (
+        <>
+          <div className="text-right mb-2">
+            <span className="mr-2">Welcome, {user.email}</span>
+            <Button onClick={handleLogout}>Logout</Button>
+          </div>
+
+          <Tabs defaultValue="dashboard" className="w-full">
+            <TabsList className="grid grid-cols-3 w-full">
+              <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+              <TabsTrigger value="articles">Articles</TabsTrigger>
+              <TabsTrigger value="admin">Admin</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="dashboard">
+              <Card className="mt-4">
+                <CardContent className="space-y-4 pt-4">
+                  <h2 className="text-xl font-semibold">Uploaded PDFs</h2>
+                  <input type="file" accept="application/pdf" onChange={handleUploadPdf} className="bg-transparent" />
+                  <ul className="list-disc list-inside">
+                    {pdfs.map((pdf, idx) => (
+                      <li key={idx}>
+                        <a href={pdf.url} target="_blank" className="hover:underline">{pdf.name}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="articles">
+              <Card className="mt-4">
+                <CardContent className="space-y-4 pt-4">
+                  <h2 className="text-xl font-semibold">Post a New Article</h2>
+                  <Textarea
+                    placeholder="Write your article here..."
+                    value={newArticle}
+                    onChange={(e) => setNewArticle(e.target.value)}
+                  />
+                  <Button onClick={handlePostArticle}>Post Article</Button>
+                  <div className="pt-4">
+                    <h3 className="text-lg font-bold">Published Articles</h3>
+                    <ul className="list-disc list-inside">
+                      {articles.map((art, idx) => (
+                        <li key={idx}>{art}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="admin">
+              <Card className="mt-4">
+                <CardContent className="space-y-4 pt-4">
+                  <h2 className="text-xl font-semibold">Admin Controls</h2>
+                  <div className="flex flex-col gap-2">
+                    <Button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>Toggle Theme</Button>
+                    <Button onClick={() => setTabActive(!tabActive)}>{tabActive ? "Deactivate Tabs" : "Activate Tabs"}</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
+    </div>
+  );
+}
